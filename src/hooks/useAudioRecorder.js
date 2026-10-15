@@ -17,6 +17,7 @@ function pickMimeType() {
  *
  * start()  – asks for the mic and begins recording
  * stop()   – stops recording and resolves with the audio Blob
+ * level    – 0..1 input loudness, for the live visualiser
  * elapsed  – seconds since recording started
  */
 export function useAudioRecorder() {
@@ -59,6 +60,25 @@ export function useAudioRecorder() {
         audio: { echoCancellation: true, noiseSuppression: true },
       })
       streamRef.current = stream
+
+      // Live input level for the visualiser
+      const ctx = new AudioContext()
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 512
+      ctx.createMediaStreamSource(stream).connect(analyser)
+      audioCtxRef.current = ctx
+      const data = new Uint8Array(analyser.fftSize)
+      const tick = () => {
+        analyser.getByteTimeDomainData(data)
+        let sum = 0
+        for (let i = 0; i < data.length; i++) {
+          const v = (data[i] - 128) / 128
+          sum += v * v
+        }
+        setLevel(Math.min(1, Math.sqrt(sum / data.length) * 4))
+        rafRef.current = requestAnimationFrame(tick)
+      }
+      tick()
 
       const mimeType = pickMimeType()
       const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
