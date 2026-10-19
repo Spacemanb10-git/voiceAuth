@@ -1,5 +1,17 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react'
 
+function CameraIcon(props) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
+      <path
+        d="M4 8a2 2 0 0 1 2-2h1.5l1.2-1.8A2 2 0 0 1 10.4 3h3.2a2 2 0 0 1 1.7.9L16.5 6H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"
+        strokeLinejoin="round"
+      />
+      <circle cx="12" cy="12.5" r="3.5" />
+    </svg>
+  )
+}
+
 function Corner({ className }) {
   return (
     <span
@@ -11,14 +23,15 @@ function Corner({ className }) {
 
 /**
  * Live camera preview with rounded corners.
- * The parent can call ref.current.captureFrame() to get a JPEG Blob of the
- * current frame (used when submitting a check-in).
+ * The capture button on the feed grabs the current frame as a JPEG Blob and
+ * passes it to onCapture. The parent can also call ref.current.captureFrame().
  */
-const CameraFeed = forwardRef(function CameraFeed(_props, ref) {
+const CameraFeed = forwardRef(function CameraFeed({ onCapture }, ref) {
   const videoRef = useRef(null)
   const [status, setStatus] = useState('starting') // starting | live | error
   const [errorMsg, setErrorMsg] = useState('')
   const [now, setNow] = useState(() => new Date())
+  const [flash, setFlash] = useState(false)
 
   useEffect(() => {
     let stream
@@ -63,17 +76,29 @@ const CameraFeed = forwardRef(function CameraFeed(_props, ref) {
     return () => clearInterval(id)
   }, [])
 
-  useImperativeHandle(ref, () => ({
-    captureFrame() {
-      const video = videoRef.current
-      if (!video || status !== 'live' || !video.videoWidth) return Promise.resolve(null)
-      const canvas = document.createElement('canvas')
-      canvas.width = video.videoWidth
-      canvas.height = video.videoHeight
-      canvas.getContext('2d').drawImage(video, 0, 0)
-      return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9))
-    },
-  }))
+  function captureFrame() {
+    const video = videoRef.current
+    if (!video || status !== 'live' || !video.videoWidth) return Promise.resolve(null)
+    const canvas = document.createElement('canvas')
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    const ctx = canvas.getContext('2d')
+    // The preview is mirrored; mirror the snapshot too so it matches what was seen
+    ctx.translate(canvas.width, 0)
+    ctx.scale(-1, 1)
+    ctx.drawImage(video, 0, 0)
+    return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.9))
+  }
+
+  useImperativeHandle(ref, () => ({ captureFrame }))
+
+  async function handleCapture() {
+    const blob = await captureFrame()
+    if (!blob) return
+    setFlash(true)
+    setTimeout(() => setFlash(false), 250)
+    onCapture?.(blob)
+  }
 
   return (
     <div className="relative">
@@ -116,8 +141,29 @@ const CameraFeed = forwardRef(function CameraFeed(_props, ref) {
           </span>
         </div>
 
+        {/* shutter flash */}
+        <div
+          className={`pointer-events-none absolute inset-0 bg-white transition-opacity duration-200 ${
+            flash ? 'opacity-70' : 'opacity-0'
+          }`}
+        />
+
+        {/* capture button */}
+        {status === 'live' && (
+          <button
+            type="button"
+            onClick={handleCapture}
+            className="group absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/20 bg-black/55 py-2 pr-5 pl-2 text-sm font-medium text-white backdrop-blur-md transition-all hover:border-lime/60 hover:bg-black/70 active:scale-95"
+          >
+            <span className="grid size-9 place-items-center rounded-full bg-white text-ink transition-colors group-hover:bg-lime">
+              <CameraIcon className="size-5" />
+            </span>
+            Capture photo
+          </button>
+        )}
+
         {/* bottom-right timestamp */}
-        <div className="absolute right-14 bottom-5 rounded-full bg-black/50 px-3 py-1 font-mono text-[11px] text-white/80 backdrop-blur-md">
+        <div className="absolute right-14 bottom-5 hidden rounded-full sm:block bg-black/50 px-3 py-1 font-mono text-[11px] text-white/80 backdrop-blur-md">
           GATE-01 · {now.toLocaleTimeString([], { hour12: false })}
         </div>
 

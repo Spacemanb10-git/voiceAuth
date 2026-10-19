@@ -1,9 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import CameraFeed from './components/CameraFeed.jsx'
+import EntitiesTable, { toRows } from './components/EntitiesTable.jsx'
 import SpeakButton from './components/SpeakButton.jsx'
 import SubmitButton from './components/SubmitButton.jsx'
 import { useAudioRecorder } from './hooks/useAudioRecorder.js'
-import { submitCheckIn, transcribeAudio } from './lib/api.js'
+import { extractFromAudio, submitCheckIn } from './lib/api.js'
 
 function Step({ n, label, done, active }) {
   return (
@@ -43,28 +44,69 @@ function Toast({ toast, onClose }) {
   )
 }
 
+function SnapshotStrip({ snapshot, onClear }) {
+  return (
+    <div className="mt-4 flex items-center gap-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 backdrop-blur-md">
+      {snapshot ? (
+        <img
+          src={snapshot.url}
+          alt="Captured delivery agent"
+          className="h-16 w-28 rounded-xl object-cover ring-1 ring-lime/50"
+        />
+      ) : (
+        <div className="grid h-16 w-28 place-items-center rounded-xl border border-dashed border-white/15 font-mono text-[10px] text-zinc-500">
+          NO PHOTO
+        </div>
+      )}
+      <div className="flex-1">
+        <p className="text-sm font-medium">
+          {snapshot ? 'Photo captured' : 'Capture a photo of the agent'}
+        </p>
+        <p className="text-xs text-zinc-400">
+          {snapshot
+            ? `Taken at ${snapshot.at.toLocaleTimeString([], { hour12: false })} · press Capture again to retake`
+            : 'Use the Capture photo button on the camera feed'}
+        </p>
+      </div>
+      {snapshot && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="rounded-full px-3 py-1 text-xs text-zinc-400 hover:bg-white/5 hover:text-white"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  )
+}
+
 export default function App() {
-  const cameraRef = useRef(null)
   const recorder = useAudioRecorder()
 
-  const [audioBlob, setAudioBlob] = useState(null)
-  const [transcript, setTranscript] = useState('')
-  const [recordingId, setRecordingId] = useState(null)
-  const [transcribing, setTranscribing] = useState(false)
+  const [snapshot, setSnapshot] = useState(null) // { blob, url, at }
+  const [extraction, setExtraction] = useState(null) // server response
+  const [extracting, setExtracting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState(null)
+  const toastTimer = useRef(0)
+
+  // free the old preview URL whenever the snapshot changes
+  useEffect(() => () => snapshot && URL.revokeObjectURL(snapshot.url), [snapshot])
 
   const notify = (type, message) => {
     setToast({ type, message })
-    clearTimeout(notify.t)
-    notify.t = setTimeout(() => setToast(null), 5000)
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(null), 5000)
+  }
+
+  function handleCapture(blob) {
+    setSnapshot({ blob, url: URL.createObjectURL(blob), at: new Date() })
   }
 
   async function handleSpeakToggle() {
     if (!recorder.isRecording) {
-      setTranscript('')
-      setRecordingId(null)
-      setAudioBlob(null)
+      setExtraction(null)
       await recorder.start()
       return
     }
@@ -74,29 +116,31 @@ export default function App() {
       notify('error', 'Nothing was recorded. Try again.')
       return
     }
-    setAudioBlob(blob)
-    setTranscribing(true)
+
+    // Second press: send right away; the server replies with extracted entities
+    setExtracting(true)
     try {
-      const result = await transcribeAudio(blob)
-      setTranscript(result.transcript ?? result.text ?? '')
-      setRecordingId(result.id ?? null)
-      notify('success', 'Audio transcribed.')
+      const result = await extractFromAudio(blob)
+      setExtraction(result)
+      notify('success', 'Details extracted from the recording.')
     } catch (err) {
       notify('error', err.message)
     } finally {
-      setTranscribing(false)
+      setExtracting(false)
     }
   }
 
   async function handleSubmit() {
     setSubmitting(true)
     try {
-      const snapshot = await cameraRef.current?.captureFrame()
-      await submitCheckIn({ snapshot, transcript, recordingId, audio: audioBlob })
+      await submitCheckIn({
+        snapshot: snapshot.blob,
+        entities: extraction?.entities ?? extraction,
+        recordingId: extraction?.id ?? null,
+      })
       notify('success', 'Check-in submitted. Agent logged at the gate.')
-      setAudioBlob(null)
-      setTranscript('')
-      setRecordingId(null)
+      setSnapshot(null)
+      setExtraction(null)
     } catch (err) {
       notify('error', err.message)
     } finally {
@@ -104,8 +148,9 @@ export default function App() {
     }
   }
 
-  const hasVoice = Boolean(audioBlob)
-  const canSubmit = hasVoice && !recorder.isRecording && !transcribing
+  const hasPhoto = Boolean(snapshot)
+  const hasDetails = toRows(extraction).length > 0
+  const canSubmit = hasPhoto && hasDetails && !recorder.isRecording && !extracting
 
   return (
     <div className="relative min-h-screen overflow-hidden">
@@ -126,9 +171,9 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-5 rounded-full border border-white/10 bg-white/[0.03] px-5 py-2.5 backdrop-blur-md">
-            <Step n={1} label="Face" done />
+            <Step n={1} label="Photo" done={hasPhoto} active={!hasPhoto} />
             <span className="h-px w-6 bg-white/15" />
-            <Step n={2} label="Voice" done={hasVoice} active={!hasVoice} />
+            <Step n={2} label="Voice" done={hasDetails} active={hasPhoto && !hasDetails} />
             <span className="h-px w-6 bg-white/15" />
             <Step n={3} label="Submit" active={canSubmit} />
           </div>
@@ -137,13 +182,12 @@ export default function App() {
         <main className="mt-10 grid gap-8 lg:grid-cols-[1.6fr_1fr]">
           {/* camera */}
           <section>
-            <div className="mb-3 flex items-end justify-between">
-              <div>
-                <p className="eyebrow">Camera</p>
-                <h2 className="text-lg font-semibold">Look into the camera</h2>
-              </div>
+            <div className="mb-3">
+              <p className="eyebrow">Camera</p>
+              <h2 className="text-lg font-semibold">Look into the camera</h2>
             </div>
-            <CameraFeed ref={cameraRef} />
+            <CameraFeed onCapture={handleCapture} />
+            <SnapshotStrip snapshot={snapshot} onClear={() => setSnapshot(null)} />
           </section>
 
           {/* controls */}
@@ -153,10 +197,10 @@ export default function App() {
               <h2 className="text-lg font-semibold">Say your name, company and the drop-off point</h2>
             </div>
 
-            <div className="py-2">
+            <div className="py-1">
               <SpeakButton
                 isRecording={recorder.isRecording}
-                isBusy={transcribing}
+                isBusy={extracting}
                 level={recorder.level}
                 elapsed={recorder.elapsed}
                 onToggle={handleSpeakToggle}
@@ -169,18 +213,19 @@ export default function App() {
               </p>
             )}
 
-            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-              <p className="eyebrow mb-2">Transcript</p>
-              <p className={`min-h-12 text-sm leading-relaxed ${transcript ? 'text-zinc-100' : 'text-zinc-500'}`}>
-                {transcribing
-                  ? 'Listening back…'
-                  : transcript ||
-                    (hasVoice ? 'Recording captured — transcript unavailable.' : 'Your words will appear here.')}
-              </p>
-            </div>
+            <EntitiesTable result={extraction} loading={extracting} />
 
-            <div className="mt-auto">
+            <div className="mt-auto space-y-2">
               <SubmitButton onClick={handleSubmit} disabled={!canSubmit} loading={submitting} />
+              {!canSubmit && !submitting && (
+                <p className="text-center text-xs text-zinc-500">
+                  {!hasPhoto && !hasDetails
+                    ? 'Capture a photo and record the agent to submit'
+                    : !hasPhoto
+                      ? 'Capture a photo to submit'
+                      : 'Record the agent to submit'}
+                </p>
+              )}
             </div>
           </aside>
         </main>

@@ -27,7 +27,7 @@ function StopIcon(props) {
  * Shows pulse rings and a live level meter while recording.
  */
 export default function SpeakButton({ isRecording, isBusy, level = 0, elapsed = 0, onToggle }) {
-  const label = isBusy ? 'Transcribing…' : isRecording ? 'Tap to finish' : 'Speak here'
+  const label = isBusy ? 'Processing…' : isRecording ? 'Tap to finish' : 'Speak here'
 
   return (
     <div className="flex flex-col items-center gap-5">
@@ -68,7 +68,7 @@ export default function SpeakButton({ isRecording, isBusy, level = 0, elapsed = 
           {isRecording ? (
             <span className="text-rose">● REC {formatTime(elapsed)}</span>
           ) : isBusy ? (
-            'Sending audio to the server'
+            'Extracting details from your audio'
           ) : (
             'Press once to start, again to send'
           )}

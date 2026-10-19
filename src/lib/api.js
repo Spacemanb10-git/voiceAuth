@@ -1,23 +1,26 @@
-// Thin client for the Flask backend.
+// Clients for the two Flask backends.
 //
-// Assumed contract (the backend will be built to match):
-//   POST /api/transcribe   multipart: audio=<file>          -> { id, transcript }
-//   POST /api/checkin      multipart: snapshot=<jpeg>, transcript,
-//                                     recording_id, [audio]      -> { id, status }
+// 1. Extraction server (audio -> transcript -> entities)
+//    POST /api/extract        multipart: audio=<file>
+//      -> { id, entities }    entities: { key: value } or [{ label, value }]
 //
-// In dev, Vite proxies /api to VITE_BACKEND_URL. Set VITE_API_BASE to call a
-// backend on another origin directly.
+// 2. Check-in server (stores the gate entry)
+//    POST /checkin/submit     multipart: snapshot=<jpeg>, entities=<json>,
+//                                        recording_id, captured_at
+//      -> { id, status }
+//
+// In dev, Vite proxies /api to VITE_EXTRACT_BACKEND_URL and /checkin to
+// VITE_CHECKIN_BACKEND_URL. Set the *_API_BASE variables to call the servers
+// on another origin directly.
 
-const API_BASE = (import.meta.env.VITE_API_BASE || '').replace(/\/$/, '')
+const trim = (s) => (s || '').replace(/\/$/, '')
+const EXTRACT_BASE = trim(import.meta.env.VITE_EXTRACT_API_BASE)
+const CHECKIN_BASE = trim(import.meta.env.VITE_CHECKIN_API_BASE)
 
-async function postForm(path, formData, { signal } = {}) {
+async function postForm(url, formData, { signal } = {}) {
   let res
   try {
-    res = await fetch(`${API_BASE}${path}`, {
-      method: 'POST',
-      body: formData,
-      signal,
-    })
+    res = await fetch(url, { method: 'POST', body: formData, signal })
   } catch (err) {
     if (err.name === 'AbortError') throw err
     throw new Error('Could not reach the server. Is the backend running?')
@@ -43,23 +46,22 @@ function extensionFor(mimeType = '') {
   return 'webm'
 }
 
-/** Send a recorded audio blob for transcription. */
-export function transcribeAudio(blob, options) {
+/**
+ * Send a recorded audio blob. The server transcribes it and replies with the
+ * entities it extracted from the transcript.
+ */
+export function extractFromAudio(blob, options) {
   const form = new FormData()
   form.append('audio', blob, `recording.${extensionFor(blob.type)}`)
-  return postForm('/api/transcribe', form, options)
+  return postForm(`${EXTRACT_BASE}/api/extract`, form, options)
 }
 
-/** Submit the gate check-in: a camera snapshot plus the transcription result. */
-export function submitCheckIn({ snapshot, transcript, recordingId, audio }, options) {
+/** Submit the gate check-in: the captured snapshot plus the extracted entities. */
+export function submitCheckIn({ snapshot, entities, recordingId }, options) {
   const form = new FormData()
-  if (snapshot) form.append('snapshot', snapshot, 'snapshot.jpg')
-  // If transcription failed there is no recording id, so send the audio itself
-  if (audio && recordingId == null) {
-    form.append('audio', audio, `recording.${extensionFor(audio.type)}`)
-  }
-  if (transcript) form.append('transcript', transcript)
+  form.append('snapshot', snapshot, 'snapshot.jpg')
+  form.append('entities', JSON.stringify(entities ?? {}))
   if (recordingId != null) form.append('recording_id', String(recordingId))
   form.append('captured_at', new Date().toISOString())
-  return postForm('/api/checkin', form, options)
+  return postForm(`${CHECKIN_BASE}/checkin/submit`, form, options)
 }
