@@ -1,6 +1,6 @@
 # VoiceAuth — Campus Gate Check-in (Frontend)
 
-Front end for tracking delivery agents entering the campus. Built with **Vite + React + Tailwind CSS v4**.
+Front end for tracking delivery agents entering the campus. Built with **Vite + React + Tailwind CSS v4**, with a minimal light UI.
 
 The screen has three parts:
 

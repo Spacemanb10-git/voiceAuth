@@ -39,38 +39,24 @@ export default function EntitiesTable({ result, loading }) {
   const rows = toRows(result)
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-2.5">
-        <p className="eyebrow">Extracted details</p>
-        {rows.length > 0 && (
-          <span className="rounded-full bg-lime/15 px-2 py-0.5 font-mono text-[10px] text-lime">
-            {rows.length} fields
-          </span>
-        )}
-      </div>
+    <div>
+      <p className="label mb-2">Extracted details</p>
 
       {loading ? (
-        <div className="space-y-2 p-4">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="h-7 animate-pulse rounded-lg bg-white/5" />
-          ))}
-        </div>
+        <p className="py-3 text-sm text-zinc-400">Extracting…</p>
       ) : rows.length === 0 ? (
-        <p className="px-4 py-5 text-sm text-zinc-500">
+        <p className="py-3 text-sm text-zinc-400">
           {result ? 'No details were found in the recording.' : 'Details from your recording will appear here.'}
         </p>
       ) : (
         <table className="w-full text-sm">
-          <tbody>
+          <tbody className="divide-y divide-zinc-100">
             {rows.map((row, i) => (
-              <tr key={`${row.key}-${i}`} className="border-b border-white/5 last:border-0 even:bg-white/[0.02]">
-                <th
-                  scope="row"
-                  className="w-2/5 px-4 py-2.5 text-left align-top font-mono text-[11px] font-normal tracking-wider text-zinc-400 uppercase"
-                >
+              <tr key={`${row.key}-${i}`}>
+                <th scope="row" className="w-2/5 py-2 pr-4 text-left align-top font-normal text-zinc-500">
                   {row.key}
                 </th>
-                <td className="px-4 py-2.5 break-words text-zinc-100">{row.value}</td>
+                <td className="py-2 break-words text-zinc-900">{row.value}</td>
               </tr>
             ))}
           </tbody>
