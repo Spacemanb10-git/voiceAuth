@@ -79,3 +79,43 @@ export function detailsFromResponse(result, previous = emptyDetails()) {
   }
   return next
 }
+
+const digits = (v) => String(v ?? '').replace(/\D/g, '')
+
+/** Mobile: 10 digits starting 6-9; a leading +91 / 91 / 0 is accepted. */
+export function normaliseMobile(v) {
+  let d = digits(v)
+  if (d.length === 12 && d.startsWith('91')) d = d.slice(2)
+  if (d.length === 11 && d.startsWith('0')) d = d.slice(1)
+  return d
+}
+
+/**
+ * Check every field. Returns { field_key: message } for the fields that fail;
+ * an empty object means the form is ready to submit.
+ */
+export function validateDetails(values) {
+  const errors = {}
+  for (const field of FIELDS) {
+    if (!String(values[field.key] ?? '').trim()) errors[field.key] = `${field.label} is required`
+  }
+
+  if (!errors.agent_mobile && !/^[6-9]\d{9}$/.test(normaliseMobile(values.agent_mobile))) {
+    errors.agent_mobile = 'Enter a valid 10-digit mobile number'
+  }
+
+  if (!errors.aadhaar_number && !/^[2-9]\d{11}$/.test(digits(values.aadhaar_number))) {
+    errors.aadhaar_number = 'Aadhaar number must be 12 digits'
+  }
+
+  return errors
+}
+
+/** Clean values for sending to the check-in server. */
+export function cleanDetails(values) {
+  return {
+    ...Object.fromEntries(FIELDS.map((f) => [f.key, String(values[f.key] ?? '').trim()])),
+    agent_mobile: normaliseMobile(values.agent_mobile),
+    aadhaar_number: digits(values.aadhaar_number),
+  }
+}
