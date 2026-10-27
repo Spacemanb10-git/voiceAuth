@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import CameraFeed from './components/CameraFeed.jsx'
-import EntitiesTable, { toRows } from './components/EntitiesTable.jsx'
+import DetailsForm from './components/DetailsForm.jsx'
 import SpeakButton from './components/SpeakButton.jsx'
 import SubmitButton from './components/SubmitButton.jsx'
 import { useAudioRecorder } from './hooks/useAudioRecorder.js'
 import { extractFromAudio, submitCheckIn } from './lib/api.js'
+import { detailsFromResponse, emptyDetails } from './lib/fields.js'
 
 function Toast({ toast, onClose }) {
   if (!toast) return null
@@ -49,7 +50,9 @@ export default function App() {
   const recorder = useAudioRecorder()
 
   const [snapshot, setSnapshot] = useState(null) // { blob, url, at }
-  const [extraction, setExtraction] = useState(null) // server response
+  const [hasSpoken, setHasSpoken] = useState(false) // form appears after the first recording
+  const [details, setDetails] = useState(emptyDetails)
+  const [recordingId, setRecordingId] = useState(null)
   const [extracting, setExtracting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState(null)
@@ -70,7 +73,6 @@ export default function App() {
 
   async function handleSpeakToggle() {
     if (!recorder.isRecording) {
-      setExtraction(null)
       await recorder.start()
       return
     }
@@ -81,12 +83,15 @@ export default function App() {
       return
     }
 
-    // Second press: send right away; the server replies with extracted entities
+    // Second press: send right away; the server replies with extracted entities,
+    // which pre-fill the form. Fields the server did not return keep their value.
+    setHasSpoken(true)
     setExtracting(true)
     try {
       const result = await extractFromAudio(blob)
-      setExtraction(result)
-      notify('success', 'Details extracted from the recording.')
+      setDetails((prev) => detailsFromResponse(result, prev))
+      setRecordingId(result?.id ?? null)
+      notify('success', 'Form filled from the recording. Check and edit if needed.')
     } catch (err) {
       notify('error', err.message)
     } finally {
@@ -99,12 +104,14 @@ export default function App() {
     try {
       await submitCheckIn({
         snapshot: snapshot.blob,
-        entities: extraction?.entities ?? extraction,
-        recordingId: extraction?.id ?? null,
+        entities: details,
+        recordingId,
       })
       notify('success', 'Check-in submitted. Agent logged at the gate.')
       setSnapshot(null)
-      setExtraction(null)
+      setDetails(emptyDetails())
+      setRecordingId(null)
+      setHasSpoken(false)
     } catch (err) {
       notify('error', err.message)
     } finally {
@@ -113,8 +120,10 @@ export default function App() {
   }
 
   const hasPhoto = Boolean(snapshot)
-  const hasDetails = toRows(extraction).length > 0
-  const canSubmit = hasPhoto && hasDetails && !recorder.isRecording && !extracting
+  const hasDetails = hasSpoken
+  const canSubmit = hasPhoto && hasSpoken && !recorder.isRecording && !extracting
+
+  const updateField = (key, value) => setDetails((prev) => ({ ...prev, [key]: value }))
 
   return (
     <div className="min-h-screen">
@@ -143,7 +152,13 @@ export default function App() {
 
             {recorder.error && <p className="text-sm text-red-600">{recorder.error}</p>}
 
-            <EntitiesTable result={extraction} loading={extracting} />
+            {hasSpoken ? (
+              <DetailsForm values={details} onChange={updateField} disabled={extracting} />
+            ) : (
+              <p className="text-center text-sm text-zinc-400">
+                Speak once to fill in the check-in form.
+              </p>
+            )}
 
             <div className="mt-auto space-y-2">
               <SubmitButton onClick={handleSubmit} disabled={!canSubmit} loading={submitting} />
