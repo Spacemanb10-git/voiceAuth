@@ -8,9 +8,12 @@ The screen has three parts:
    **Capture photo** button on the feed to take a snapshot of the delivery agent.
 2. **Speak here** – press once to start recording the mic, press again to stop. The audio is
    sent right away to the extraction server, which transcribes it and returns the entities it
-   found (name, company, drop-off point, …). These are shown in a table.
-3. **Submit check-in** – sends the captured snapshot and the extracted entities to the
-   check-in server.
+   found. After the first recording an editable **check-in form** appears, pre-filled from the
+   response: delivery agent name, agent mobile number, student name, app, hostel and agent
+   Aadhaar number. Anything the server missed can be typed in or corrected.
+3. **Submit check-in** – checks that a photo was captured and that every form field is filled
+   (mobile must be a valid 10-digit number, Aadhaar 12 digits), then sends the snapshot and the
+   form to the check-in server.
 
 ## Getting started
 
@@ -30,14 +33,26 @@ Camera and microphone need a secure context: `localhost` works; for other hosts 
 | ------ | -------------- | -------------------------- | ----------------------- |
 | POST   | `/api/extract` | `audio` (webm/ogg/m4a)     | `{ "id", "entities" }`  |
 
-`entities` can be an object (`{ "name": "Ravi", "company": "Swiggy" }`) or a list
-(`[{ "label": "name", "value": "Ravi" }]`); the table renders either.
+`entities` can be an object (`{ "agent_name": "Ravi", "app": "Swiggy" }`) or a list
+(`[{ "label": "agent_name", "value": "Ravi" }]`). Keys are matched to form fields by name, with
+common aliases accepted (see `src/lib/fields.js`):
+
+| Form field        | Preferred key    | Also accepted                                   |
+| ----------------- | ---------------- | ----------------------------------------------- |
+| Delivery agent    | `agent_name`     | `name`, `delivery_agent_name`, `agent`          |
+| Agent mobile      | `agent_mobile`   | `mobile`, `phone`, `mobile_number`, `contact`   |
+| Student name      | `student_name`   | `student`, `recipient`, `customer_name`         |
+| App               | `app`            | `delivery_app`, `platform`, `company`           |
+| Hostel            | `hostel`         | `hostel_name`, `drop_off_point`, `destination`  |
+| Agent Aadhaar     | `aadhaar_number` | `aadhaar`, `aadhar`, `uid`                      |
 
 **Check-in server** (default `http://localhost:5001`)
 
 | Method | Path              | Body (multipart/form-data)                                          | Response             |
 | ------ | ----------------- | ------------------------------------------------------------------- | -------------------- |
-| POST   | `/checkin/submit` | `snapshot` (jpeg), `entities` (JSON string), `recording_id`, `captured_at` | `{ "id", "status" }` |
+| POST   | `/checkin/submit` | `snapshot` (jpeg), `agent_name`, `agent_mobile`, `student_name`, `app`, `hostel`, `aadhaar_number`, `recording_id`, `captured_at` | `{ "id", "status" }` |
+
+Mobile is sent as 10 digits (country code stripped) and Aadhaar as 12 digits without spaces.
 
 Errors should return a non-2xx status with `{ "error": "message" }`; the UI shows it as a toast.
 
@@ -51,9 +66,10 @@ In development Vite proxies `/api/*` to `VITE_EXTRACT_BACKEND_URL` and `/checkin
 src/
   App.jsx                    page layout and check-in flow
   components/CameraFeed.jsx  live camera with capture button
-  components/EntitiesTable.jsx table of entities returned by the server
+  components/DetailsForm.jsx editable check-in form
   components/SpeakButton.jsx record toggle with level meter
   components/SubmitButton.jsx
   hooks/useAudioRecorder.js  MediaRecorder + input level
-  lib/api.js                 calls to the Flask backend
+  lib/api.js                 calls to the Flask backends
+  lib/fields.js              form fields, response mapping, validation
 ```
