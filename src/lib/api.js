@@ -5,8 +5,9 @@
 //      -> { id, entities }    entities: { key: value } or [{ label, value }]
 //
 // 2. Check-in server (stores the gate entry)
-//    POST /checkin/submit     multipart: snapshot=<jpeg>, entities=<json>,
-//                                        recording_id, captured_at
+//    POST /checkin/submit     multipart: snapshot=<jpeg>, agent_name,
+//                                        agent_mobile, student_name, app, hostel,
+//                                        aadhaar_number, recording_id, captured_at
 //      -> { id, status }
 //
 // In dev, Vite proxies /api to VITE_EXTRACT_BACKEND_URL and /checkin to
@@ -56,11 +57,11 @@ export function extractFromAudio(blob, options) {
   return postForm(`${EXTRACT_BASE}/api/extract`, form, options)
 }
 
-/** Submit the gate check-in: the captured snapshot plus the extracted entities. */
-export function submitCheckIn({ snapshot, entities, recordingId }, options) {
+/** Submit the gate check-in: the captured snapshot plus the confirmed form details. */
+export function submitCheckIn({ snapshot, details, recordingId }, options) {
   const form = new FormData()
   form.append('snapshot', snapshot, 'snapshot.jpg')
-  form.append('entities', JSON.stringify(entities ?? {}))
+  for (const [key, value] of Object.entries(details ?? {})) form.append(key, value)
   if (recordingId != null) form.append('recording_id', String(recordingId))
   form.append('captured_at', new Date().toISOString())
   return postForm(`${CHECKIN_BASE}/checkin/submit`, form, options)
