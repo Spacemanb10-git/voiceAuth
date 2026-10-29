@@ -146,9 +146,9 @@ export default function App() {
   return (
     <div className="min-h-screen">
       <div className="mx-auto max-w-6xl px-5 py-8 sm:px-8 lg:py-12">
-        <header className="flex items-baseline justify-between">
-          <h1 className="text-lg font-semibold tracking-tight">VoiceAuth</h1>
-          <p className="text-sm text-zinc-500">Campus gate check-in</p>
+        <header className="text-center">
+          <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">Campus Gate Entry System</h1>
+          <p className="mt-2 text-sm text-zinc-500">Delivery agent check-in · VoiceAuth</p>
         </header>
 
         <main className="mt-8 grid gap-6 lg:grid-cols-[1.6fr_1fr]">
