@@ -5,7 +5,7 @@ import SpeakButton from './components/SpeakButton.jsx'
 import SubmitButton from './components/SubmitButton.jsx'
 import { useAudioRecorder } from './hooks/useAudioRecorder.js'
 import { extractFromAudio, submitCheckIn } from './lib/api.js'
-import { detailsFromResponse, emptyDetails } from './lib/fields.js'
+import { cleanDetails, detailsFromResponse, emptyDetails, validateDetails } from './lib/fields.js'
 
 function Toast({ toast, onClose }) {
   if (!toast) return null
@@ -53,6 +53,7 @@ export default function App() {
   const [hasSpoken, setHasSpoken] = useState(false) // form appears after the first recording
   const [details, setDetails] = useState(emptyDetails)
   const [recordingId, setRecordingId] = useState(null)
+  const [errors, setErrors] = useState({})
   const [extracting, setExtracting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState(null)
@@ -90,6 +91,7 @@ export default function App() {
     try {
       const result = await extractFromAudio(blob)
       setDetails((prev) => detailsFromResponse(result, prev))
+      setErrors({})
       setRecordingId(result?.id ?? null)
       notify('success', 'Form filled from the recording. Check and edit if needed.')
     } catch (err) {
@@ -100,16 +102,30 @@ export default function App() {
   }
 
   async function handleSubmit() {
+    if (!snapshot) {
+      notify('error', 'Capture a photo of the delivery agent first.')
+      return
+    }
+    // Every field must be filled (and valid) before the check-in goes out
+    const found = validateDetails(details)
+    setErrors(found)
+    if (Object.keys(found).length > 0) {
+      notify('error', 'Please fill in all the fields before submitting.')
+      document.getElementById(`field-${Object.keys(found)[0]}`)?.focus()
+      return
+    }
+
     setSubmitting(true)
     try {
       await submitCheckIn({
         snapshot: snapshot.blob,
-        entities: details,
+        details: cleanDetails(details),
         recordingId,
       })
       notify('success', 'Check-in submitted. Agent logged at the gate.')
       setSnapshot(null)
       setDetails(emptyDetails())
+      setErrors({})
       setRecordingId(null)
       setHasSpoken(false)
     } catch (err) {
@@ -120,10 +136,12 @@ export default function App() {
   }
 
   const hasPhoto = Boolean(snapshot)
-  const hasDetails = hasSpoken
   const canSubmit = hasPhoto && hasSpoken && !recorder.isRecording && !extracting
 
-  const updateField = (key, value) => setDetails((prev) => ({ ...prev, [key]: value }))
+  const updateField = (key, value) => {
+    setDetails((prev) => ({ ...prev, [key]: value }))
+    if (errors[key]) setErrors(({ [key]: _, ...rest }) => rest)
+  }
 
   return (
     <div className="min-h-screen">
@@ -153,7 +171,12 @@ export default function App() {
             {recorder.error && <p className="text-sm text-red-600">{recorder.error}</p>}
 
             {hasSpoken ? (
-              <DetailsForm values={details} onChange={updateField} disabled={extracting} />
+              <DetailsForm
+                values={details}
+                errors={errors}
+                onChange={updateField}
+                disabled={extracting || submitting}
+              />
             ) : (
               <p className="text-center text-sm text-zinc-400">
                 Speak once to fill in the check-in form.
@@ -164,7 +187,7 @@ export default function App() {
               <SubmitButton onClick={handleSubmit} disabled={!canSubmit} loading={submitting} />
               {!canSubmit && !submitting && (
                 <p className="text-center text-xs text-zinc-400">
-                  {!hasPhoto && !hasDetails
+                  {!hasPhoto && !hasSpoken
                     ? 'Capture a photo and record the agent to submit'
                     : !hasPhoto
                       ? 'Capture a photo to submit'
