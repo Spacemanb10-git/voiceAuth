@@ -19,15 +19,17 @@ The screen has three parts:
 
 ```bash
 npm install
-cp .env.example .env     # point the two *_BACKEND_URL values at the Flask servers
+cp .env.example .env     # defaults to the Flask backend on http://localhost:5000
 npm run dev              # http://localhost:5173
 ```
 
 Camera and microphone need a secure context: `localhost` works; for other hosts use HTTPS.
 
-## Backend contract (two Flask servers, to be implemented)
+## Backend contract
 
-**Extraction server** (default `http://localhost:5000`)
+Implemented by the Flask app in [`../backend`](../backend), which serves both route groups on one port.
+
+**Extraction** (`/api`)
 
 | Method | Path           | Body (multipart/form-data) | Response                |
 | ------ | -------------- | -------------------------- | ----------------------- |
@@ -46,7 +48,7 @@ common aliases accepted (see `src/lib/fields.js`):
 | Hostel            | `hostel`         | `hostel_name`, `drop_off_point`, `destination`  |
 | Agent Aadhaar     | `aadhaar_number` | `aadhaar`, `aadhar`, `uid`                      |
 
-**Check-in server** (default `http://localhost:5001`)
+**Check-in** (`/checkin`)
 
 | Method | Path              | Body (multipart/form-data)                                          | Response             |
 | ------ | ----------------- | ------------------------------------------------------------------- | -------------------- |
@@ -56,8 +58,8 @@ Mobile is sent as 10 digits (country code stripped) and Aadhaar as 12 digits wit
 
 Errors should return a non-2xx status with `{ "error": "message" }`; the UI shows it as a toast.
 
-In development Vite proxies `/api/*` to `VITE_EXTRACT_BACKEND_URL` and `/checkin/*` to
-`VITE_CHECKIN_BACKEND_URL`, so neither Flask app needs CORS. Set `VITE_EXTRACT_API_BASE` /
+In development Vite proxies `/api/*` to `VITE_EXTRACT_BACKEND_URL` (default
+`http://localhost:5000`) and `/checkin/*` to `VITE_CHECKIN_BACKEND_URL` (defaults to the same server). Set `VITE_EXTRACT_API_BASE` /
 `VITE_CHECKIN_API_BASE` to call the servers on another origin directly.
 
 ## Project layout
