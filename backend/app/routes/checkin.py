@@ -1,9 +1,9 @@
 """Check-in endpoints: store the agent, their photo and the delivery order."""
 
-from flask import Blueprint, abort, jsonify, request
+from flask import Blueprint, Response, abort, jsonify, request
 
 from ..db import get_db
-from ..validation import validate_checkin
+from ..validation import mask_aadhaar, validate_checkin
 
 bp = Blueprint("checkin", __name__, url_prefix="/checkin")
 
@@ -77,3 +77,39 @@ def submit():
         ),
         201,
     )
+
+
+@bp.get("/orders")
+def list_orders():
+    """Recent gate entries, newest first. ?limit=50"""
+    limit = min(max(request.args.get("limit", 50, type=int), 1), 500)
+    rows = get_db().execute(
+        """
+        SELECT o.order_id, o.app, o.hostel, o.student_name, o.entered_at,
+               a.agent_id, a.name AS agent_name, a.mobile_number AS agent_mobile,
+               a.aadhaar_number, a.photo_id
+        FROM delivery_orders o
+        JOIN delivery_agents a ON a.agent_id = o.delivery_person_id
+        ORDER BY o.order_id DESC
+        LIMIT ?
+        """,
+        (limit,),
+    ).fetchall()
+
+    orders = []
+    for row in rows:
+        item = dict(row)
+        item["aadhaar_number"] = mask_aadhaar(item["aadhaar_number"])
+        item["photo_url"] = f"/checkin/photos/{item['photo_id']}"
+        orders.append(item)
+    return jsonify(orders=orders)
+
+
+@bp.get("/photos/<int:photo_id>")
+def get_photo(photo_id: int):
+    row = get_db().execute(
+        "SELECT photo, mime_type FROM photo_ids WHERE photo_id = ?", (photo_id,)
+    ).fetchone()
+    if row is None:
+        abort(404, description="Photo not found.")
+    return Response(row["photo"], mimetype=row["mime_type"])
