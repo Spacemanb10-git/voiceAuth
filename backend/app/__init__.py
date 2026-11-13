@@ -6,7 +6,7 @@ from flask_cors import CORS
 from . import db
 from .config import Config
 from .errors import register_error_handlers
-from .routes import extract
+from .routes import checkin, extract
 
 
 def create_app(overrides: dict | None = None) -> Flask:
@@ -20,4 +20,5 @@ def create_app(overrides: dict | None = None) -> Flask:
     register_error_handlers(app)
 
     app.register_blueprint(extract.bp)
+    app.register_blueprint(checkin.bp)
     return app
