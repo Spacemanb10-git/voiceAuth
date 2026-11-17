@@ -8,7 +8,9 @@
 //    POST /checkin/submit     multipart: snapshot=<jpeg>, agent_name,
 //                                        agent_mobile, student_name, app, hostel,
 //                                        aadhaar_number, recording_id, captured_at
-//      -> { id, status }
+//      The backend saves the entry, then asks a remote order-verification
+//      server whether a student logged a matching order, and only then replies:
+//      -> { id, order_id, status: 'accepted' | 'not_accepted', verification_message }
 //
 // In dev, Vite proxies /api to VITE_EXTRACT_BACKEND_URL and /checkin to
 // VITE_CHECKIN_BACKEND_URL. Set the *_API_BASE variables to call the servers

@@ -4,6 +4,7 @@ from flask import Blueprint, Response, abort, jsonify, request
 
 from ..db import get_db
 from ..validation import mask_aadhaar, validate_checkin
+from ..verification import VerificationError, verify_order
 
 bp = Blueprint("checkin", __name__, url_prefix="/checkin")
 
@@ -66,14 +67,37 @@ def submit():
             (agent_id, values["app"], values["hostel"], values["student_name"]),
         ).lastrowid
 
+    # The order is saved. Before answering the front end, ask the remote
+    # verification server whether a student logged an order with these details.
+    order = dict(
+        db.execute(
+            "SELECT order_id, delivery_person_id, app, hostel, student_name, entered_at "
+            "FROM delivery_orders WHERE order_id = ?",
+            (order_id,),
+        ).fetchone()
+    )
+    order["agent_name"] = values["agent_name"]
+    order["agent_mobile"] = values["agent_mobile"]
+
+    saved = dict(
+        id=order_id,
+        order_id=order_id,
+        agent_id=agent_id,
+        photo_id=photo_id,
+        returning_agent=bool(agent),
+    )
+
+    try:
+        verdict = verify_order(order)
+    except VerificationError as exc:
+        return jsonify(error=f"Entry saved (order #{order_id}), but it could not be verified: {exc}", **saved), 502
+
     return (
         jsonify(
-            id=order_id,
-            order_id=order_id,
-            agent_id=agent_id,
-            photo_id=photo_id,
-            returning_agent=bool(agent),
-            status="checked_in",
+            **saved,
+            status=verdict["status"],  # "accepted" | "not_accepted"
+            accepted=verdict["status"] == "accepted",
+            verification_message=verdict["message"],
         ),
         201,
     )

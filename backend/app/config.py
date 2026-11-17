@@ -27,5 +27,10 @@ class Config:
 
     DATABASE = _db_path(os.getenv("DATABASE_PATH"))
 
+    # Remote Flask server that confirms a student logged a matching order
+    ORDER_VERIFY_URL = os.getenv("ORDER_VERIFY_URL", "")
+    ORDER_VERIFY_TOKEN = os.getenv("ORDER_VERIFY_TOKEN", "")
+    ORDER_VERIFY_TIMEOUT = float(os.getenv("ORDER_VERIFY_TIMEOUT", "15"))
+
     MAX_CONTENT_LENGTH = int(os.getenv("MAX_UPLOAD_MB", "25")) * 1024 * 1024
     CORS_ORIGINS = _list(os.getenv("CORS_ORIGINS", "http://localhost:5173"))

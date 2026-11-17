@@ -84,7 +84,8 @@ def test_submit_stores_all_three_tables(client, app):
     res = submit(client)
     assert res.status_code == 201
     body = res.get_json()
-    assert body["status"] == "checked_in" and body["returning_agent"] is False
+    assert body["status"] == "accepted" and body["accepted"] is True
+    assert body["returning_agent"] is False
 
     (photo_id, photo), = rows(app, "SELECT photo_id, photo FROM photo_ids")
     assert photo == JPEG
@@ -146,3 +147,113 @@ def test_orders_list_masks_aadhaar_and_serves_photo(client):
     assert orders[0]["aadhaar_number"] == "XXXX XXXX 0123"
     photo = client.get(orders[0]["photo_url"])
     assert photo.status_code == 200 and photo.data == JPEG
+
+
+# --- remote order verification ---------------------------------------------
+
+def test_order_details_are_sent_for_verification_after_saving(client, app):
+    body = submit(client).get_json()
+    (sent,) = app.verify_calls
+    assert sent["order_id"] == body["order_id"]
+    assert sent["delivery_person_id"] == body["agent_id"]
+    assert (sent["app"], sent["hostel"], sent["student_name"]) == ("Swiggy", "Hostel 12", "Vipul Yadav")
+    assert sent["entered_at"]
+    assert "aadhaar_number" not in sent
+
+
+def test_not_accepted_is_forwarded(client, monkeypatch):
+    from app.routes import checkin
+
+    monkeypatch.setattr(
+        checkin, "verify_order", lambda order: {"status": "not_accepted", "message": "No such order"}
+    )
+    res = submit(client)
+    assert res.status_code == 201
+    body = res.get_json()
+    assert body["status"] == "not_accepted" and body["accepted"] is False
+    assert body["verification_message"] == "No such order"
+
+
+def test_unreachable_verifier_is_502_but_order_is_kept(client, app, monkeypatch):
+    from app.routes import checkin
+    from app.verification import VerificationError
+
+    def down(order):
+        raise VerificationError("Could not reach the order verification server.")
+
+    monkeypatch.setattr(checkin, "verify_order", down)
+    res = submit(client)
+    assert res.status_code == 502
+    assert "could not be verified" in res.get_json()["error"]
+    assert rows(app, "SELECT COUNT(*) FROM delivery_orders") == [(1,)]
+
+
+class FakeResponse:
+    def __init__(self, status_code, body):
+        self.status_code, self._body = status_code, body
+
+    def json(self):
+        if self._body is None:
+            raise ValueError("no json")
+        return self._body
+
+
+def _verify_with(app, monkeypatch, response=None, exc=None, **config):
+    import requests
+
+    from app import verification
+
+    seen = {}
+
+    def fake_post(url, json, headers, timeout):
+        seen.update(url=url, json=json, headers=headers, timeout=timeout)
+        if exc:
+            raise exc
+        return response
+
+    monkeypatch.setattr(verification.requests, "post", fake_post)
+    app.config.update(config)
+    with app.app_context():
+        return verification.verify_order({"order_id": 1}), seen
+
+
+def test_verify_order_reply_formats(app, monkeypatch):
+    for reply, expected in [
+        ({"status": "accepted"}, "accepted"),
+        ({"status": "Not Accepted"}, "not_accepted"),
+        ({"accepted": True}, "accepted"),
+        ({"accepted": False, "reason": "no match"}, "not_accepted"),
+    ]:
+        result, _ = _verify_with(app, monkeypatch, FakeResponse(200, reply))
+        assert result["status"] == expected
+    result, _ = _verify_with(app, monkeypatch, FakeResponse(404, {"status": "not_found"}))
+    assert result["status"] == "not_accepted"
+
+
+def test_verify_order_sends_token_and_timeout(app, monkeypatch):
+    _, seen = _verify_with(
+        app, monkeypatch, FakeResponse(200, {"status": "accepted"}),
+        ORDER_VERIFY_TOKEN="secret", ORDER_VERIFY_TIMEOUT=7.0,
+    )
+    assert seen["headers"]["Authorization"] == "Bearer secret"
+    assert seen["timeout"] == 7.0 and seen["json"] == {"order_id": 1}
+
+
+def test_verify_order_failures(app, monkeypatch):
+    import pytest
+    import requests
+
+    from app.verification import VerificationError
+
+    cases = [
+        dict(response=FakeResponse(500, {"status": "accepted"})),
+        dict(response=FakeResponse(200, None)),
+        dict(response=FakeResponse(200, {"status": "maybe"})),
+        dict(exc=requests.Timeout()),
+        dict(exc=requests.ConnectionError()),
+    ]
+    for case in cases:
+        with pytest.raises(VerificationError):
+            _verify_with(app, monkeypatch, **case)
+    with pytest.raises(VerificationError):
+        _verify_with(app, monkeypatch, FakeResponse(200, {}), ORDER_VERIFY_URL="")

@@ -10,6 +10,7 @@ def app(tmp_path, monkeypatch):
             "TESTING": True,
             "DATABASE": str(tmp_path / "test.sqlite3"),
             "GEMINI_API_KEY": "test-key",
+            "ORDER_VERIFY_URL": "https://verify.example.test/api/verify-order",
         }
     )
 
@@ -29,6 +30,17 @@ def app(tmp_path, monkeypatch):
             "aadhaar_number": "2345 6789 0123",
         },
     )
+
+    # Remote order verification: accept by default, tests can override
+    from app.routes import checkin
+
+    app.verify_calls = []
+
+    def fake_verify(order):
+        app.verify_calls.append(order)
+        return {"status": "accepted", "message": "Order matched"}
+
+    monkeypatch.setattr(checkin, "verify_order", fake_verify)
     yield app
 
 

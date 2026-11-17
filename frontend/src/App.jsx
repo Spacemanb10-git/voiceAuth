@@ -3,6 +3,7 @@ import CameraFeed from './components/CameraFeed.jsx'
 import DetailsForm from './components/DetailsForm.jsx'
 import SpeakButton from './components/SpeakButton.jsx'
 import SubmitButton from './components/SubmitButton.jsx'
+import VerifyOverlay from './components/VerifyOverlay.jsx'
 import { useAudioRecorder } from './hooks/useAudioRecorder.js'
 import { extractFromAudio, submitCheckIn } from './lib/api.js'
 import { cleanDetails, detailsFromResponse, emptyDetails, validateDetails } from './lib/fields.js'
@@ -57,6 +58,7 @@ export default function App() {
   const [extracting, setExtracting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [toast, setToast] = useState(null)
+  const [verdict, setVerdict] = useState(null) // { status, message, orderId }
   const toastTimer = useRef(0)
 
   // free the old preview URL whenever the snapshot changes
@@ -115,14 +117,23 @@ export default function App() {
       return
     }
 
+    // The backend saves the entry, asks the remote order server to verify it,
+    // and only then replies. The overlay spinner shows until that reply arrives.
+    setToast(null)
+    setVerdict(null)
     setSubmitting(true)
     try {
-      await submitCheckIn({
+      const result = await submitCheckIn({
         snapshot: snapshot.blob,
         details: cleanDetails(details),
         recordingId,
       })
-      notify('success', 'Check-in submitted. Agent logged at the gate.')
+      setVerdict({
+        status: result.status === 'accepted' ? 'accepted' : 'not_accepted',
+        message: result.verification_message || '',
+        orderId: result.order_id ?? result.id ?? null,
+      })
+      // the entry is stored either way; clear the form for the next agent
       setSnapshot(null)
       setDetails(emptyDetails())
       setErrors({})
@@ -199,6 +210,7 @@ export default function App() {
         </main>
       </div>
 
+      <VerifyOverlay waiting={submitting} result={verdict} onClose={() => setVerdict(null)} />
       <Toast toast={toast} onClose={() => setToast(null)} />
     </div>
   )

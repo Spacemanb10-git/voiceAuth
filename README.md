@@ -2,7 +2,8 @@
 
 Tracks delivery agents entering the campus. At the gate the agent's photo is captured, they speak
 their details into the microphone, Gemini fills in a check-in form from the recording, the guard
-checks it and submits.
+checks it and submits. The backend stores the entry and checks with a remote order server whether a
+student has logged a matching order; the gate screen then shows **Accepted** or **Not accepted**.
 
 ```
 voiceAuth/
@@ -17,7 +18,7 @@ voiceAuth/
 cd backend
 python -m venv .venv && .venv\Scripts\activate      # macOS/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env                                 # add GEMINI_API_KEY
+cp .env.example .env                                 # add GEMINI_API_KEY and ORDER_VERIFY_URL
 python run.py
 
 # 2. frontend (http://localhost:5173), in a second terminal

@@ -13,7 +13,8 @@ The screen has three parts:
    Aadhaar number. Anything the server missed can be typed in or corrected.
 3. **Submit check-in** – checks that a photo was captured and that every form field is filled
    (mobile must be a valid 10-digit number, Aadhaar 12 digits), then sends the snapshot and the
-   form to the check-in server.
+   form to the backend. A spinner overlay stays up while the backend verifies the order with the
+   remote order server, then shows **Accepted** or **Not accepted**.
 
 ## Getting started
 
@@ -52,7 +53,7 @@ common aliases accepted (see `src/lib/fields.js`):
 
 | Method | Path              | Body (multipart/form-data)                                          | Response             |
 | ------ | ----------------- | ------------------------------------------------------------------- | -------------------- |
-| POST   | `/checkin/submit` | `snapshot` (jpeg), `agent_name`, `agent_mobile`, `student_name`, `app`, `hostel`, `aadhaar_number`, `recording_id`, `captured_at` | `{ "id", "status" }` |
+| POST   | `/checkin/submit` | `snapshot` (jpeg), `agent_name`, `agent_mobile`, `student_name`, `app`, `hostel`, `aadhaar_number`, `recording_id`, `captured_at` | `{ "id", "order_id", "status": "accepted" \| "not_accepted", "verification_message" }` |
 
 Mobile is sent as 10 digits (country code stripped) and Aadhaar as 12 digits without spaces.
 
@@ -71,6 +72,7 @@ src/
   components/DetailsForm.jsx editable check-in form
   components/SpeakButton.jsx record toggle with level meter
   components/SubmitButton.jsx
+  components/VerifyOverlay.jsx waiting spinner and Accepted / Not accepted result
   hooks/useAudioRecorder.js  MediaRecorder + input level
   lib/api.js                 calls to the Flask backends
   lib/fields.js              form fields, response mapping, validation

@@ -5,8 +5,9 @@ Python + Flask + SQLite 3 backend for the VoiceAuth front end.
 1. **`POST /api/extract`**: receives the agent's voice recording, transcribes it with
    **Gemini 3.5 Transcribe** (`gemini-3.5-transcribe`) and asks a second Gemini model
    (`gemini-3.5-flash`, structured JSON output) to pull out the check-in form fields.
-2. **`POST /checkin/submit`**: receives the front end's Submit (photo + form) and stores
-   it in SQLite.
+2. **`POST /checkin/submit`**: receives the front end's Submit (photo + form), stores it in
+   SQLite, then asks a **remote order-verification server** whether a student logged a matching
+   order, and only then replies to the front end with `accepted` / `not_accepted`.
 
 ## Setup
 
@@ -51,12 +52,45 @@ Mobile numbers are returned as 10 digits and Aadhaar as 12 digits.
 multipart/form-data: `snapshot` (jpeg/png/webp), `agent_name`, `agent_mobile`, `student_name`,
 `app`, `hostel`, `aadhaar_number`, optional `captured_at`, `recording_id`.
 
-`201` → `{ "id", "order_id", "agent_id", "photo_id", "returning_agent", "status": "checked_in" }`
+Flow: save photo, agent and order (one transaction) → POST the order to `ORDER_VERIFY_URL` →
+wait for its answer → reply.
+
+`201` → `{ "id", "order_id", "agent_id", "photo_id", "returning_agent", "status": "accepted" | "not_accepted", "accepted": true|false, "verification_message" }`
+
+`502` → the entry was saved but the verification server could not be reached or replied with
+something unexpected: `{ "error": "Entry saved (order #7), but it could not be verified: …", "order_id": 7, … }`
 
 `400` → `{ "error": "...", "fields": { "agent_mobile": "Enter a valid 10-digit mobile number" } }`
 
 An agent is identified by Aadhaar number. When the same agent comes again, their row is reused:
 name, mobile and photo are refreshed (the photo keeps the same `photo_id`) and a new order is added.
+
+### Remote order-verification server (not part of this repo)
+
+Another Flask server, on a different machine, that holds the orders students have registered.
+For every check-in this backend sends:
+
+```http
+POST <ORDER_VERIFY_URL>
+Content-Type: application/json
+Authorization: Bearer <ORDER_VERIFY_TOKEN>      (only if set)
+
+{
+  "order_id": 7,
+  "delivery_person_id": 3,
+  "agent_name": "Ravi Kumar",
+  "agent_mobile": "9876543210",
+  "app": "Swiggy",
+  "hostel": "Hostel 12",
+  "student_name": "Vipul Yadav",
+  "entered_at": "2026-11-17 09:41:12"
+}
+```
+
+and expects `{ "status": "accepted" }` when a student has an order with these details, otherwise
+`{ "status": "not_accepted" }`, optionally with a `"message"`. `{"accepted": true|false}` also works,
+as does a `404` with `{"status": "not_found"}`. The Aadhaar number is never sent. The request times
+out after `ORDER_VERIFY_TIMEOUT` seconds (default 15); use an `https://` URL since it leaves this machine.
 
 ### Other endpoints
 - `GET /api/health`: status and configured models
@@ -91,5 +125,8 @@ in a single transaction.
 | `TRANSCRIBE_LANGUAGES`    | auto-detect             | e.g. `en-IN,hi-IN`                            |
 | `DATABASE_PATH`           | `instance/campus_gate.sqlite3` |                                        |
 | `MAX_UPLOAD_MB`           | `25`                    |                                               |
+| `ORDER_VERIFY_URL`        | —                       | required; remote verification endpoint        |
+| `ORDER_VERIFY_TOKEN`      | —                       | optional bearer token for that server         |
+| `ORDER_VERIFY_TIMEOUT`    | `15`                    | seconds                                       |
 | `CORS_ORIGINS`            | `http://localhost:5173` | only needed when not using the Vite proxy     |
 | `HOST` / `PORT`           | `127.0.0.1` / `5000`    |                                               |
