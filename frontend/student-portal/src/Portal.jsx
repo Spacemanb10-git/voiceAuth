@@ -6,7 +6,6 @@ export default function Portal() {
   const [username, setUsername] = useState(null);
   const [page, setPage] = useState('overview');
   const [deliveries, setDeliveries] = useState([]);
-  const [search, setSearch] = useState('');
   const [form, setForm] = useState({ platform: 'Amazon', order_id: '', item: '', expected_date: '' });
 
   async function loadDeliveries() {
@@ -51,9 +50,7 @@ export default function Portal() {
 
   const expectedCount = deliveries.filter(d => d.status === 'Expected').length;
   const receivedCount = deliveries.filter(d => d.status === 'Received').length;
-  const searchResults = deliveries.filter(d =>
-    (d.order_id + ' ' + d.platform).toLowerCase().includes(search.toLowerCase())
-  );
+  const expectedDeliveries = deliveries.filter(d => d.status === 'Expected');
 
   if (!username) {return null;}
 
@@ -121,8 +118,7 @@ export default function Portal() {
           <>
             <h1>My deliveries</h1>
             <div className="card">
-              <input className="search" placeholder="Search by order ID or platform" value={search} onChange={e => setSearch(e.target.value)} />
-              <DeliveryTable rows={searchResults} />
+              <DeliveryTable rows={expectedDeliveries} />
             </div>
           </>
         )}

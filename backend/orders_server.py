@@ -70,9 +70,10 @@ def update_status(delivery_id):
     return jsonify({"message": "Status updated."})
 
 
-@app.route("/verify", methods=["GET"])
+@app.route("/verify", methods=["POST"])
 def verify_order():
-    order_id = request.args.get("order_id")
+    data = request.get_json()
+    order_id = data["order_id"]
 
     conn = get_db_connection()
     row = conn.execute(
